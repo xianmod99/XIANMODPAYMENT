@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshNotificationAccess() {
         val enabled = Settings.Secure.getString(
             contentResolver,
-            Settings.Secure.ENABLED_NOTIFICATION_LISTENERS
+            "enabled_notification_listeners"
         ).orEmpty()
 
         val expected = ComponentName(this, com.xianmod.payment.listener.GoPayNotificationListener::class.java)
