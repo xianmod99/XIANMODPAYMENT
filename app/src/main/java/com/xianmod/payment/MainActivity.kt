@@ -213,7 +213,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 
 @Composable
 private fun StatusPill(text: String, color: Color) {
-    Surface(color.copy(alpha = .15f), shape = RoundedCornerShape(50)) {
+    Surface(color = color.copy(alpha = .15f), shape = RoundedCornerShape(50)) {
         Text(text, color = color, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
