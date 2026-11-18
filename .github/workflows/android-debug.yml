@@ -30,6 +30,13 @@ jobs:
         run: |
           gradle clean testDebugUnitTest assembleDebug
 
+      - name: Verify APK and create checksum
+        run: |
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          test -n "$APK"
+          unzip -t "$APK"
+          sha256sum "$APK" > app/build/outputs/apk/debug/SHA256SUMS.txt
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:

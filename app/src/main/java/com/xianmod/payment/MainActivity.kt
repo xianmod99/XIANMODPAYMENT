@@ -1,10 +1,12 @@
 package com.xianmod.payment
 
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +15,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -28,11 +33,15 @@ private val Violet = Color(0xFF9B72F2)
 private val Muted = Color(0xFFB9AEC9)
 
 class MainActivity : ComponentActivity() {
+    private val notificationAccessGranted = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        refreshNotificationAccess()
         setContent {
             XianmodTheme {
                 PaymentApp(
+                    notificationAccessGranted = notificationAccessGranted.value,
                     onOpenNotificationSettings = {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     }
@@ -40,10 +49,46 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Android returns here after the user changes Notification Access.
+        refreshNotificationAccess()
+    }
+
+    private fun refreshNotificationAccess() {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_NOTIFICATION_LISTENERS
+        ).orEmpty()
+
+        val expected = ComponentName(this, com.xianmod.payment.listener.GoPayNotificationListener::class.java)
+        notificationAccessGranted.value = enabled.split(':')
+            .mapNotNull(ComponentName::unflattenFromString)
+            .any { it == expected }
+    }
 }
 
 @Composable
-private fun PaymentApp(onOpenNotificationSettings: () -> Unit) {
+private fun PaymentApp(
+    notificationAccessGranted: Boolean,
+    onOpenNotificationSettings: () -> Unit
+) {
+    val context = LocalContext.current
+    var listenerConnected by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            listenerConnected = context.getSharedPreferences(
+                com.xianmod.payment.listener.GoPayNotificationListener.PREFS,
+                android.content.Context.MODE_PRIVATE
+            ).getBoolean(
+                com.xianmod.payment.listener.GoPayNotificationListener.KEY_CONNECTED,
+                false
+            )
+            delay(1200)
+        }
+    }
+
     var selected by remember { mutableIntStateOf(0) }
     val labels = listOf("Beranda", "Transaksi", "Monitor", "Pengaturan")
     val icons = listOf(Icons.Default.Dashboard, Icons.Default.ReceiptLong, Icons.Default.Radar, Icons.Default.Settings)
@@ -71,7 +116,12 @@ private fun PaymentApp(onOpenNotificationSettings: () -> Unit) {
         }
     ) { padding ->
         when (selected) {
-            0 -> DashboardScreen(Modifier.padding(padding), onOpenNotificationSettings)
+            0 -> DashboardScreen(
+                Modifier.padding(padding),
+                notificationAccessGranted,
+                listenerConnected,
+                onOpenNotificationSettings
+            )
             1 -> TransactionsScreen(Modifier.padding(padding))
             2 -> MonitorScreen(Modifier.padding(padding), onOpenNotificationSettings)
             else -> SettingsScreen(Modifier.padding(padding), onOpenNotificationSettings)
@@ -90,8 +140,17 @@ private fun Page(modifier: Modifier = Modifier, content: @Composable ColumnScope
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("XIANMOD", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Black)
-                Text("PAYMENT COMPANION", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Image(
+                        painter = painterResource(id = R.drawable.xianmod_logo),
+                        contentDescription = "Logo XIANMOD",
+                        modifier = Modifier.size(46.dp)
+                    )
+                    Column {
+                        Text("XIANMOD", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Black)
+                        Text("PAYMENT COMPANION", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
         item { Column(content = content) }
@@ -111,19 +170,45 @@ private fun GlassCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun DashboardScreen(modifier: Modifier, onOpenSettings: () -> Unit) {
+private fun DashboardScreen(
+    modifier: Modifier,
+    notificationAccessGranted: Boolean,
+    listenerConnected: Boolean,
+    onOpenSettings: () -> Unit
+) {
+    val statusText = when {
+        !notificationAccessGranted -> "PERLU IZIN"
+        listenerConnected -> "LISTENER AKTIF"
+        else -> "IZIN AKTIF"
+    }
+    val statusColor = when {
+        !notificationAccessGranted -> Color(0xFFFFB74D)
+        listenerConnected -> Color(0xFF55D69E)
+        else -> Color(0xFF9B72F2)
+    }
+    val headline = when {
+        !notificationAccessGranted -> "Belum terhubung"
+        listenerConnected -> "Listener terhubung"
+        else -> "Menghubungkan listener"
+    }
+    val detail = when {
+        !notificationAccessGranted -> "Berikan Notification Access agar XIANMOD PAYMENT dapat menerima notifikasi merchant."
+        listenerConnected -> "Layanan notifikasi Android sudah terhubung. Menunggu notifikasi merchant yang dikonfigurasi."
+        else -> "Izin sudah aktif. Android sedang menghubungkan layanan notifikasi."
+    }
+
     Page(modifier) {
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text("STATUS LISTENER", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                StatusPill("PERLU IZIN", Color(0xFFFFB74D))
+                StatusPill(statusText, statusColor)
             }
-            Text("Belum terhubung", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("Aktifkan Notification Access untuk mulai menerima event merchant.", color = Muted, fontSize = 12.sp)
+            Text(headline, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(detail, color = Muted, fontSize = 12.sp)
             Button(onClick = onOpenSettings, colors = ButtonDefaults.buttonColors(containerColor = Violet)) {
                 Icon(Icons.Default.NotificationsActive, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Buka Notification Access")
+                Text(if (notificationAccessGranted) "Kelola Notification Access" else "Buka Notification Access")
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

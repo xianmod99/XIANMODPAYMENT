@@ -1,29 +1,42 @@
 package com.xianmod.payment.listener
 
+import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 
 /**
- * Listener scaffold.
+ * XIANMOD notification listener.
  *
- * IMPORTANT:
- * 1. Set the exact GoPay Merchant package name only after verifying it on-device.
- * 2. Do not treat notification text/amount alone as proof of settled payment.
- * 3. Keep backend matching in MANUAL_REVIEW until real notification formats
- *    and transaction references have been validated.
+ * Payment activation stays disabled until the merchant package, notification
+ * format, and backend verification contract have been validated.
  */
 class GoPayNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        Log.i(TAG, "Notification listener connected")
+        setConnected(true)
+        Log.i(TAG, "XIANMOD notification listener connected")
     }
 
     override fun onListenerDisconnected() {
+        setConnected(false)
         super.onListenerDisconnected()
-        Log.w(TAG, "Notification listener disconnected")
-        requestRebind(android.content.ComponentName(this, GoPayNotificationListener::class.java))
+        Log.w(TAG, "XIANMOD notification listener disconnected")
+        requestRebind(ComponentName(this, GoPayNotificationListener::class.java))
+    }
+
+    override fun onDestroy() {
+        setConnected(false)
+        super.onDestroy()
+    }
+
+    private fun setConnected(connected: Boolean) {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CONNECTED, connected)
+            .putLong(KEY_LAST_STATE_CHANGE, System.currentTimeMillis())
+            .apply()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -35,27 +48,30 @@ class GoPayNotificationListener : NotificationListenerService() {
         val text = extras.getCharSequence("android.text")?.toString().orEmpty()
         val bigText = extras.getCharSequence("android.bigText")?.toString().orEmpty()
 
-        // Intentionally log only that an event arrived; never log raw notification content.
-        Log.i(TAG, "Merchant notification received; parser validation required")
+        // Never persist or log raw merchant notification content.
+        Log.i(TAG, "Configured merchant notification received")
 
         val parsed = NotificationParser.parse(title, text, bigText)
         if (parsed == null) {
-            Log.w(TAG, "Notification did not match a validated payment pattern")
+            Log.w(TAG, "Notification is not a validated payment event")
             return
         }
 
-        // TODO: Persist a redacted event locally and submit through authenticated API.
-        // No automatic activation is permitted in this scaffold.
-        Log.i(TAG, "Parsed candidate amount=${parsed.amount}; status=MANUAL_REVIEW")
+        // Candidate only. No API call and no VIP activation until the
+        // real GoPay notification schema and XIANMOD backend are integrated.
+        Log.i(TAG, "Payment candidate received; requires server verification")
     }
 
     companion object {
         private const val TAG = "XIANMOD.Listener"
+        const val PREFS = "xianmod_listener_state"
+        const val KEY_CONNECTED = "listener_connected"
+        const val KEY_LAST_STATE_CHANGE = "listener_last_state_change"
     }
 }
 
 object MerchantPackageConfig {
-    // Replace only after confirming the actual installed merchant app package.
+    // Set only after verifying the exact installed GoPay Merchant package.
     const val PACKAGE_NAME = ""
 }
 
@@ -66,10 +82,8 @@ data class ParsedPaymentCandidate(
 
 object NotificationParser {
     /**
-     * Safe placeholder. Real parser must be written from sanitized examples
-     * of the merchant's actual incoming-payment notifications.
+     * Deliberately disabled until sanitized real notification examples exist.
+     * A guessed parser could misread unrelated notifications as payments.
      */
-    fun parse(title: String, text: String, bigText: String): ParsedPaymentCandidate? {
-        return null
-    }
+    fun parse(title: String, text: String, bigText: String): ParsedPaymentCandidate? = null
 }
