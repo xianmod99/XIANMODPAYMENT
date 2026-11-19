@@ -9,6 +9,7 @@ permissions:
 jobs:
   build-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,18 +20,31 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
 
       - name: Build Release APK
-        run: gradle clean assembleRelease
+        run: ./gradlew clean assembleRelease
 
-      - name: Upload unsigned Release APK
+      - name: Verify Release APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          test -n "$APK"
+          unzip -t "$APK"
+          sha256sum "$APK" > app/build/outputs/apk/release/SHA256SUMS.txt
+
+      - name: Upload unsigned Release APK and checksum
         uses: actions/upload-artifact@v4
         with:
           name: XIANMOD-PAYMENT-RELEASE-UNSIGNED
-          path: app/build/outputs/apk/release/*.apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

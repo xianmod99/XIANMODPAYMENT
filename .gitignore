@@ -8,3 +8,6 @@ build/
 *.jks
 *.keystore
 secrets.properties
+node_modules/
+.env
+.env.*

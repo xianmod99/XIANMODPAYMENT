@@ -32,17 +32,18 @@ async function pair(req, res) {
   const b = readBody(req); if (!b) return json(res, 400, { ok: false, error: 'body_invalid' });
   if (!A.normalizeCode(b.code)) return json(res, 400, { ok: false, error: 'code_required' });
   const db = supabase();
-  const codeHash = A.hashCode(b.code);
-  // Konsumsi kode secara atomik: hanya satu permintaan yang bisa mengubah used_at dari NULL.
-  const { data: used } = await db.from('xian_pay_pairing_codes')
-    .update({ used_at: new Date().toISOString() })
-    .eq('code_hash', codeHash).is('used_at', null).gt('expires_at', new Date().toISOString()).select('code_hash').maybeSingle();
-  if (!used) return json(res, 401, { ok: false, error: 'code_invalid_or_expired' });
   const token = A.newDeviceToken();
   const name = String(b.device_name || 'XIANMOD PAYMENT').slice(0, 60);
-  const { data: dev, error } = await db.from('xian_pay_devices').insert({ name, token_hash: A.sha256(token), app_version: String(b.app_version || '').slice(0, 32) || null, meta: { model: String(b.model || '').slice(0, 60) } }).select('id').single();
+  const { data: deviceId, error } = await db.rpc('xian_pay_pair_device', {
+    p_code_hash: A.hashCode(b.code),
+    p_token_hash: A.sha256(token),
+    p_name: name,
+    p_app_version: String(b.app_version || '').slice(0, 32) || null,
+    p_model: String(b.model || '').slice(0, 60),
+  });
   if (error) { console.error('[pair]', error.message); return json(res, 500, { ok: false, error: 'pair_failed' }); }
-  await db.from('xian_pay_pairing_codes').update({ device_id: dev.id }).eq('code_hash', codeHash);
+  if (!deviceId) return json(res, 401, { ok: false, error: 'code_invalid_or_expired' });
+  const dev = { id: deviceId };
   await audit.log('listener_device_paired', 'system', { device_id: dev.id, name });
   return json(res, 200, { ok: true, device_id: dev.id, token, server_time: Date.now() });
 }
@@ -79,6 +80,16 @@ async function status(req, res, device) {
   return json(res, 200, { ok: true, server_time: Date.now(), device: { id: device.id, name: device.name, last_seen_at: device.last_seen_at }, counts_30d: counts });
 }
 
+async function orders(req, res, device) {
+  if (!(await A.rateOk(`orders:${device.id}`, 60, 30))) return json(res, 429, { ok: false, error: 'rate_limited' });
+  const db = supabase();
+  const { data, error } = await db.from('orders')
+    .select('order_id,package_name,total_amount_idr,qr_expires_at,status,created_at')
+    .eq('status', 'PENDING').order('created_at', { ascending: false }).limit(50);
+  if (error) return json(res, 500, { ok: false, error: 'orders_unavailable' });
+  return json(res, 200, { ok: true, server_time: Date.now(), orders: data || [] });
+}
+
 async function pairCode(req, res) {
   const code = A.newPairingCode();
   const expires = new Date(Date.now() + 10 * 60000);
@@ -105,7 +116,7 @@ async function approve(req, res) {
   return json(res, r.http, r.json);
 }
 
-const DEVICE = { event: ['POST', event], heartbeat: ['POST', heartbeat], status: ['GET', status] };
+const DEVICE = { event: ['POST', event], heartbeat: ['POST', heartbeat], status: ['GET', status], orders: ['GET', orders] };
 const OWNER = { 'pair-code': ['POST', pairCode], devices: ['GET', devices], revoke: ['POST', revoke], approve: ['POST', approve] };
 
 module.exports = async function handler(req, res) {

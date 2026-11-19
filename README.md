@@ -39,3 +39,13 @@ Release saat ini belum ditandatangani. Untuk distribusi, tambahkan signing denga
 5. Status `LISTENER AKTIF` muncul setelah Android memanggil `onListenerConnected`.
 
 Pada HyperOS, aktifkan Autostart dan setel Battery Saver ke No restrictions agar service lebih mungkin bertahan di latar belakang. Android tetap dapat membatasi proses latar belakang.
+
+
+## XIANMOD PAYMENT 1.1.0
+
+- APK memakai `https://xianmod.store` sebagai API production.
+- Pairing device token menggunakan Android Keystore AES-GCM.
+- Daftar order PENDING dimuat dari API setiap 10 detik.
+- Aktivasi pembayaran selalu memerlukan persetujuan Owner; tidak ada auto-activation dari notifikasi.
+- Package GoPay Merchant: `com.gojek.gopaymerchant`; parser nominal masih dinonaktifkan sampai format notifikasi aktual diverifikasi.
+- Jalankan workflow GitHub Actions **XIANMOD PAYMENT - Debug APK** untuk APK uji yang dapat dipasang.

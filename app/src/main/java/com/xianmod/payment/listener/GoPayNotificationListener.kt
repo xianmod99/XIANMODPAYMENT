@@ -4,12 +4,13 @@ import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.xianmod.payment.PaymentApi
 
 /**
  * XIANMOD notification listener.
  *
- * Payment activation stays disabled until the merchant package, notification
- * format, and backend verification contract have been validated.
+ * The official GoPay Merchant package is filtered. Payment parsing remains disabled
+ * until the actual notification schema is verified from a real device.
  */
 class GoPayNotificationListener : NotificationListenerService() {
 
@@ -57,9 +58,15 @@ class GoPayNotificationListener : NotificationListenerService() {
             return
         }
 
-        // Candidate only. No API call and no VIP activation until the
-        // real GoPay notification schema and XIANMOD backend are integrated.
-        Log.i(TAG, "Payment candidate received; requires server verification")
+        // Notification data is an untrusted candidate. Backend still requires Owner approval.
+        Thread {
+            try {
+                PaymentApi.postCandidate(this, sbn.packageName, parsed.amount, parsed.transactionReference, sbn.postTime)
+                Log.i(TAG, "Payment candidate forwarded for Owner review")
+            } catch (e: Exception) {
+                Log.w(TAG, "Candidate could not be sent to API: ${e.message}")
+            }
+        }.start()
     }
 
     companion object {
@@ -71,8 +78,8 @@ class GoPayNotificationListener : NotificationListenerService() {
 }
 
 object MerchantPackageConfig {
-    // Set only after verifying the exact installed GoPay Merchant package.
-    const val PACKAGE_NAME = ""
+    // Official Google Play package ID for GoPay Merchant: QRIS.
+    const val PACKAGE_NAME = "com.gojek.gopaymerchant"
 }
 
 data class ParsedPaymentCandidate(

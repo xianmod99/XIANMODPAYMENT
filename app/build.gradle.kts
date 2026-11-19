@@ -12,8 +12,9 @@ android {
         applicationId = "com.xianmod.payment"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
+        buildConfigField("String", "API_BASE_URL", "\"https://xianmod.store\"")
     }
 
     buildTypes {
