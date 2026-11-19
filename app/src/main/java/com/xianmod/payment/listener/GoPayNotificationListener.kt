@@ -93,7 +93,7 @@ object NotificationParser {
     // Verified on-device example: "Rp 1 di DIM QR."
     // Dots are treated as Indonesian thousands separators; decimals are rejected.
     private val amountLine = Regex(
-        pattern = "^\\s*Rp\\s*([0-9][0-9.]*)\\s+di\\s+(.+?)\\.?\\s*$",
+        pattern = "^\\s*Rp\\s*((?:[0-9]+)|(?:[0-9]{1,3}(?:\\.[0-9]{3})+))\\s+di\\s+(.+?)\\.?\\s*$",
         option = RegexOption.IGNORE_CASE
     )
 

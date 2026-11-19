@@ -14,7 +14,7 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "1.2.0"
-        buildConfigField("String", "API_BASE_URL", "\"https://xianmod.store\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://xianmodbot.vercel.app\"")
     }
 
     buildTypes {
@@ -55,4 +55,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
     implementation("androidx.core:core-ktx:1.16.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }
+
