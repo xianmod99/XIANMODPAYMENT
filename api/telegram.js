@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { supabase, tg, config } = require('../lib/config');
 const { createQris, checkStatus, qrImageUrl, markOrderPaidByTransaction } = require('../lib/casaku');
-const { providerIsListener, createListenerQris } = require('../lib/listener-pay');
+const listenerPay = require('../lib/listener-pay');
 const { fancy } = require('../lib/style');
 const { postMedia, loadSettings, saveSettings, norm: normEmoji } = require('../lib/emoji');
 const stock = require('../lib/stock');
@@ -91,6 +91,8 @@ async function ownerPanel(chat) {
     [{text:'💎 Paket & Harga VIP',callback_data:'vpk:list'}],
     [{text:'🏷️ Promo & Slot',callback_data:'owner_stock'}],
     [{text:'🧾 Manajemen Transaksi',callback_data:'owner_orders'}],
+    [{text:'💳 Review Pembayaran',callback_data:'ops:review'},{text:'📱 Pair APK',callback_data:'ops:pair'}],
+    [{text:'📦 Status Pengiriman VIP',callback_data:'ops:fulfillment'}],
     [{text:'🔎 Cari Buyer / Order',callback_data:'ops:find'}],
     [{text:'📊 Statistik',callback_data:'ops:stats'},{text:'💾 Backup',callback_data:'ops:backup'}],
     [{text:'✨ Premium Emoji',callback_data:'owner_emoji'}],
@@ -121,7 +123,8 @@ async function vipMenu(chat) {
     rows.push([{text:`${packages.iconFor(p.code)} ${packages.label(p)} • ${price}`,callback_data:`vip_buy:${p.code}`}]);
   }
   rows.push([{text:'🧾 RIWAYAT ORDER SAYA',callback_data:'vip_orders'}],[{text:'⬅️ MENU UTAMA',callback_data:'menu'}]);
-  return sendPhoto(chat,fancy('💎 <b>ORDER VIP</b>\n━━━━━━━━━━━━━━━━━━\nPilih paket akses grup VIP. Setelah pembayaran berhasil, bot akan mengirim link undangan khusus 1 kali masuk.\n\n💳 Pembayaran otomatis melalui <b>QRIS</b>.'),{inline_keyboard:rows});
+  const paymentLabel = listenerPay.providerIsListener() ? 'GoPay Merchant QRIS • verifikasi manual Owner' : 'Casaku QRIS';
+  return sendPhoto(chat,fancy(`💎 <b>ORDER VIP</b>\n━━━━━━━━━━━━━━━━━━\nPilih paket akses grup VIP. Setelah pembayaran berhasil, bot akan mengirim link undangan khusus 1 kali masuk.\n\n💳 Pembayaran: <b>${paymentLabel}</b>.`),{inline_keyboard:rows});
 }
 async function createOrder(uid, username, pkg) {
   const db=supabase(); if(!db)throw new Error('Supabase belum diatur.');
@@ -130,41 +133,64 @@ async function createOrder(uid, username, pkg) {
   const {data:recent}=await db.from('orders').select('*').eq('telegram_id',String(uid)).eq('package_code',pkg.code).eq('status','PENDING').gte('created_at',since).order('created_at',{ascending:false}).limit(1).maybeSingle();
   if(recent)return recent;
   const orderId=`XIAN-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random()*100000).toString().padStart(5,'0')}`;
-  const {data,error}=await db.from('orders').insert({order_id:orderId,telegram_id:String(uid),username:username||null,package_code:pkg.code,package_name:pkg.name,price_idr:pr.idr,price_usdt:0,payment_method:'QRIS',status:'PENDING'}).select('*').single();
+  const paymentMethod = listenerPay.providerIsListener() ? 'GOPAY_QRIS' : 'QRIS';
+  const {data,error}=await db.from('orders').insert({order_id:orderId,telegram_id:String(uid),username:username||null,package_code:pkg.code,package_name:pkg.name,price_idr:pr.idr,price_usdt:0,payment_method:paymentMethod,status:'PENDING'}).select('*').single();
   if(error)throw error; return data;
 }
 async function sendQris(chat, order) {
-  const total=Number(order.total_amount_idr||order.price_idr);
-  const validMinutes=order.qr_expires_at?Math.max(1,Math.round((new Date(order.qr_expires_at).getTime()-Date.now())/60000)):config.casakuExpiredMinutes;
-  const text=fancy(`📲 <b>PEMBAYARAN QRIS</b>\n━━━━━━━━━━━━━━━━━━\n🧾 <b>Order</b> : <code>${esc(order.order_id)}</code>\n📦 <b>Paket</b> : ${esc(order.package_name)}\n💰 <b>Total</b> : ${formatIDR(total)}\n⏳ <b>Berlaku</b> : ${validMinutes} menit\n\nScan QRIS di bawah. ${providerIsListener()?'<b>Bayar TEPAT sesuai total di atas</b> (termasuk 3 digit terakhir) agar terdeteksi otomatis. ':''}Status pembayaran akan diperbarui otomatis.`);
-  if(order.qr_string) await tg('sendPhoto',{chat_id:chat,photo:qrImageUrl(order.qr_string),caption:text,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'🔄 CEK STATUS',callback_data:`vip_check:${order.order_id}`}],[{text:'⬅️ MENU',callback_data:'menu'}]]}});
-  else await tg('sendMessage',{chat_id:chat,text,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'🔄 CEK STATUS',callback_data:`vip_check:${order.order_id}`}],[{text:'⬅️ MENU',callback_data:'menu'}]]}});
+  const total = Number(order.total_amount_idr || order.price_idr || 0);
+  const expiry = order.qr_expires_at ? new Date(order.qr_expires_at) : null;
+  const remaining = expiry && Number.isFinite(expiry.getTime()) ? Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / 60000)) : config.casakuExpiredMinutes;
+  const text = fancy(`📲 <b>PEMBAYARAN QRIS</b>\n━━━━━━━━━━━━━━━━━━\n🧾 <b>Order</b> : <code>${esc(order.order_id)}</code>\n📦 <b>Paket</b> : ${esc(order.package_name)}\n💰 <b>Total</b> : ${formatIDR(total)}\n⏳ <b>Berlaku</b> : ${remaining} menit\n\nScan QRIS menggunakan GoPay atau aplikasi pembayaran yang mendukung QRIS.\nStatus akan diperbarui setelah notifikasi masuk dan Owner memverifikasi pembayaran.`);
+  const markup = { inline_keyboard: [[{ text: '🔄 CEK STATUS', callback_data: `vip_check:${order.order_id}` }], [{ text: '⬅️ MENU', callback_data: 'menu' }]] };
+  if (order.qr_string) return tg('sendPhoto', { chat_id: chat, photo: qrImageUrl(order.qr_string), caption: text, parse_mode: 'HTML', reply_markup: markup });
+  return tg('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', reply_markup: markup });
 }
+
 async function createOrReuseQris(chat, uid, orderId) {
-  const db=supabase();
-  const {data:order,error}=await db.from('orders').select('*').eq('order_id',orderId).eq('telegram_id',String(uid)).maybeSingle();
-  if(error||!order)return tg('sendMessage',{chat_id:chat,text:'⚠️ Order tidak ditemukan.'});
-  if(order.status==='PAID')return tg('sendMessage',{chat_id:chat,text:'✅ Order ini sudah LUNAS. Link grup VIP sudah dikirim melalui bot.'});
-  if(order.status!=='PENDING')return tg('sendMessage',{chat_id:chat,text:`⚠️ Order berstatus ${esc(order.status)}. Silakan buat order baru.`});
-  const listenerMode=providerIsListener();
-  if((listenerMode?!order.casaku_transaction_id:!!order.casaku_transaction_id) && order.qr_expires_at && new Date(order.qr_expires_at)>new Date() && order.qr_string){ return sendQris(chat,order); }
-  const pkg=await packages.get(order.package_code);
-  if(pkg){ const pr=await packagePrice(pkg); if(!pr.available){await db.from('orders').update({status:'CANCELLED'}).eq('order_id',orderId).eq('status','PENDING');return tg('sendMessage',{chat_id:chat,text:'⛔ Paket sedang tidak tersedia. Silakan pilih paket lain.'});} if(Number(order.price_idr)!==Number(pr.idr)){await db.from('orders').update({price_idr:pr.idr,price_usdt:0}).eq('order_id',orderId).eq('status','PENDING');order.price_idr=pr.idr;order.price_usdt=0;} }
-  if(listenerMode){
-    try {
-      const q=await createListenerQris(order);
-      const {data:updated,error:updateError}=await db.from('orders').update({payment_method:'QRIS',casaku_transaction_id:null,qr_string:q.qrString,total_amount_idr:q.totalAmount,qr_expires_at:q.expiresAt}).eq('order_id',orderId).eq('status','PENDING').select('*').single();
-      if(updateError)throw updateError;
-      return sendQris(chat,updated);
-    } catch(e) { console.error('[listener qris]',e.message||e); return tg('sendMessage',{chat_id:chat,text:`❌ Gagal membuat QRIS.\n${esc(e.message||e)}`}); }
+  const db = supabase();
+  const { data: order, error } = await db.from('orders').select('*').eq('order_id', orderId).eq('telegram_id', String(uid)).maybeSingle();
+  if (error || !order) return tg('sendMessage', { chat_id: chat, text: '⚠️ Order tidak ditemukan.' });
+  if (order.status === 'PAID') return tg('sendMessage', { chat_id: chat, text: '✅ Order ini sudah LUNAS. Jika akses VIP belum diterima, hubungi Owner.' });
+  if (order.status !== 'PENDING') return tg('sendMessage', { chat_id: chat, text: `⚠️ Order berstatus ${esc(order.status)}. Silakan buat order baru.` });
+
+  const listenerMode = listenerPay.providerIsListener();
+  const hasActiveQr = order.qr_string && order.qr_expires_at && new Date(order.qr_expires_at) > new Date();
+  const qrBelongsToCurrentProvider = listenerMode
+    ? order.payment_method === 'GOPAY_QRIS'
+    : !!order.casaku_transaction_id;
+  if (hasActiveQr && qrBelongsToCurrentProvider) return sendQris(chat, order);
+
+  const pkg = await packages.get(order.package_code);
+  if (pkg) {
+    const pr = await packagePrice(pkg);
+    if (!pr.available) {
+      await db.from('orders').update({ status: 'CANCELLED' }).eq('order_id', orderId).eq('status', 'PENDING');
+      return tg('sendMessage', { chat_id: chat, text: '⛔ Paket sedang tidak tersedia. Silakan pilih paket lain.' });
+    }
+    if (Number(order.price_idr) !== Number(pr.idr)) {
+      await db.from('orders').update({ price_idr: pr.idr, price_usdt: 0 }).eq('order_id', orderId).eq('status', 'PENDING');
+      order.price_idr = pr.idr; order.price_usdt = 0;
+    }
   }
   try {
-    const q=await createQris(order,{prefix:'XIAN'});
-    const expires=new Date(Date.now()+config.casakuExpiredMinutes*60000).toISOString();
-    const {data:updated,error:updateError}=await db.from('orders').update({payment_method:'QRIS',casaku_transaction_id:q.transactionId,qr_string:q.qrString,total_amount_idr:q.totalAmount,qr_expires_at:expires}).eq('order_id',orderId).eq('status','PENDING').select('*').single();
-    if(updateError)throw updateError;
-    return sendQris(chat,updated);
-  } catch(e) { return tg('sendMessage',{chat_id:chat,text:`❌ Gagal membuat QRIS.\n${esc(e.message||e)}`}); }
+    if (listenerMode) {
+      const q = await listenerPay.createListenerQris(order);
+      const { data: updated, error: updateError } = await db.from('orders').update({
+        payment_method: 'GOPAY_QRIS', casaku_transaction_id: null, qr_string: q.qrString,
+        total_amount_idr: q.totalAmount, qr_expires_at: q.expiresAt, payment_ref: null,
+      }).eq('order_id', orderId).eq('status', 'PENDING').select('*').single();
+      if (updateError) throw updateError;
+      return sendQris(chat, updated);
+    }
+    const q = await createQris(order, { prefix: 'XIAN' });
+    const expires = new Date(Date.now() + config.casakuExpiredMinutes * 60000).toISOString();
+    const { data: updated, error: updateError } = await db.from('orders').update({ payment_method: 'QRIS', casaku_transaction_id: q.transactionId, qr_string: q.qrString, total_amount_idr: q.totalAmount, qr_expires_at: expires }).eq('order_id', orderId).eq('status', 'PENDING').select('*').single();
+    if (updateError) throw updateError;
+    return sendQris(chat, updated);
+  } catch (e) {
+    return tg('sendMessage', { chat_id: chat, text: `❌ Gagal membuat QRIS.\n${esc(e.message || e)}` });
+  }
 }
 async function buyerOrders(chat, uid) {
   const db=supabase(); const {data=[]}=await db.from('orders').select('order_id,package_name,status,payment_method,created_at').eq('telegram_id',String(uid)).order('created_at',{ascending:false}).limit(10);
@@ -287,7 +313,7 @@ async function handleUpdate(req,res) {
     if(cb.data==='menu'){await clearAction(uid);await sendStart(chat,cb.from);return res.status(200).json({ok:true});}
     if(cb.data==='owner'&&isOwner(uid)){await ownerPanel(chat);return res.status(200).json({ok:true});}
     if(cb.data==='owner_audit'&&isOwner(uid)){await ownerAudit(chat);return res.status(200).json({ok:true});}
-    if(cb.data==='owner_settings'&&isOwner(uid)){const groupId=await settings.getVipGroupId();await tg('sendMessage',{chat_id:chat,text:`⚙️ <b>PENGATURAN BOT</b>\n━━━━━━━━━━━━━━━━━━\nGrup VIP: <code>${esc(groupId||'BELUM DIATUR')}</code>\nOwner: @${esc(config.ownerUsername)}\nPembayaran: <b>Casaku QRIS otomatis</b>\n\nTutorial dan kontak owner tetap menggunakan konfigurasi lama. ID grup VIP dapat diubah melalui tombol di bawah.`,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'✏️ UBAH ID GRUP VIP',callback_data:'owner_group'}],[{text:'🔙 OWNER PANEL',callback_data:'owner'}]]}});return res.status(200).json({ok:true});}
+    if(cb.data==='owner_settings'&&isOwner(uid)){const groupId=await settings.getVipGroupId();await tg('sendMessage',{chat_id:chat,text:`⚙️ <b>PENGATURAN BOT</b>\n━━━━━━━━━━━━━━━━━━\nGrup VIP: <code>${esc(groupId||'BELUM DIATUR')}</code>\nOwner: @${esc(config.ownerUsername)}\nPembayaran: <b>${listenerPay.providerIsListener() ? 'GoPay Merchant • persetujuan Owner' : 'Casaku (mode lama)'}</b>\n\nTutorial dan kontak owner tetap menggunakan konfigurasi lama. ID grup VIP dapat diubah melalui tombol di bawah.`,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'✏️ UBAH ID GRUP VIP',callback_data:'owner_group'}],[{text:'🔙 OWNER PANEL',callback_data:'owner'}]]}});return res.status(200).json({ok:true});}
     if(cb.data==='owner_group'&&isOwner(uid)){await setAction(uid,'set_vip_group');return tg('sendMessage',{chat_id:chat,text:'Kirim ID grup VIP baru (contoh: <code>-1001234567890</code>). Bot harus menjadi admin grup dengan izin mengundang anggota. /batal untuk membatalkan.',parse_mode:'HTML'});}
     if(cb.data==='owner_emoji'&&isOwner(uid)){const st=await loadSettings(true);return tg('sendMessage',{chat_id:chat,text:`${EMOJI_HELP}\n\nStatus: <b>${st.enabled?'AKTIF':'MATI'}</b> • Mapping: ${Object.keys(st.map||{}).length}`,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'🔙 OWNER PANEL',callback_data:'owner'}]]}});}
     if(cb.data==='bc_all'&&isOwner(uid)){await setAction(uid,'broadcast_all');return tg('sendMessage',{chat_id:chat,text:'📢 <b>BROADCAST SEMUA USER</b>\nKirim teks, foto, video, GIF, atau dokumen yang ingin disebarkan ke semua user bot (VIP + FREE lama).\nKetik /batal untuk membatalkan.',parse_mode:'HTML'});}
@@ -301,9 +327,14 @@ async function handleUpdate(req,res) {
     if(cb.data.startsWith('vip_check:')){
       const id=cb.data.slice(10),db=supabase(); const {data:o}=await db.from('orders').select('order_id,status,casaku_transaction_id').eq('order_id',id).eq('telegram_id',String(uid)).maybeSingle();
       if(!o)return tg('sendMessage',{chat_id:chat,text:'Order tidak ditemukan.'});
-      if(o.status==='PENDING'&&o.casaku_transaction_id){try{const st=await checkStatus(o.casaku_transaction_id);if(String(st).toLowerCase()==='paid')await markOrderPaidByTransaction(o.casaku_transaction_id,{paymentRef:o.casaku_transaction_id});}catch(e){console.error('[check payment]',e.message);}}
-      const {data:fresh}=await db.from('orders').select('status').eq('order_id',id).maybeSingle();
-      return tg('sendMessage',{chat_id:chat,text:`🔎 <b>STATUS ORDER</b>\nOrder: <code>${esc(id)}</code>\nStatus: <b>${esc(fresh?.status||o.status)}</b>`,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'🔄 CEK LAGI',callback_data:`vip_check:${id}`}],[{text:'💎 ORDER VIP',callback_data:'vip_order'}]]}});
+      if(o.status==='PENDING' && o.casaku_transaction_id && !listenerPay.providerIsListener()){
+        try { const st = await checkStatus(o.casaku_transaction_id); if (String(st).toLowerCase() === 'paid') await markOrderPaidByTransaction(o.casaku_transaction_id, { paymentRef: o.casaku_transaction_id }); }
+        catch (e) { console.error('[check payment]', e.message); }
+      }
+      const { data: fresh } = await db.from('orders').select('status').eq('order_id', id).maybeSingle();
+      const state = fresh?.status || o.status;
+      const suffix = state === 'PENDING' && listenerPay.providerIsListener() ? '\nPembayaran menunggu verifikasi Owner.' : '';
+      return tg('sendMessage', { chat_id: chat, text: `🔎 <b>STATUS ORDER</b>\nOrder: <code>${esc(id)}</code>\nStatus: <b>${esc(state)}</b>${suffix}`, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '🔄 CEK LAGI', callback_data: `vip_check:${id}` }], [{ text: '💎 ORDER VIP', callback_data: 'vip_order' }]] } });
     }
   }
   return res.status(200).json({ok:true});

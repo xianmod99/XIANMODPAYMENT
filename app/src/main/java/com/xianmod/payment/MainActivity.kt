@@ -112,7 +112,7 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
                     serverState = "OFFLINE / TOKEN INVALID"
                     lastError = e.message ?: "Koneksi gagal"
                 }
-                delay(10_000)
+                delay(5_000)
             }
         } else {
             pendingOrders = emptyList()
@@ -252,7 +252,7 @@ private fun OrdersScreen(modifier: Modifier, orders: List<PaymentApi.PendingOrde
     Page(modifier) {
         GlassCard {
             Text("Order PENDING", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("Daftar diperbarui otomatis setiap 10 detik melalui API perangkat yang terautentikasi.", color = Muted, fontSize = 12.sp)
+            Text("Daftar disinkronkan setiap 5 detik melalui API perangkat yang terautentikasi (polling, bukan push realtime).", color = Muted, fontSize = 12.sp)
             StatusPill(if (paired) serverState else "PAIRING DIPERLUKAN", if (paired && serverState == "TERHUBUNG") Green else Muted)
         }
         if (!paired) GlassCard { Text("Pasangkan perangkat di Pengaturan untuk melihat order.", color = Muted) }

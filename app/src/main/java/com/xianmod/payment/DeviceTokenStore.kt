@@ -43,7 +43,10 @@ object DeviceTokenStore {
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
             cipher.doFinal(encrypted).toString(Charsets.UTF_8)
         } catch (_: Exception) {
+            // Hapus ciphertext dan alias yang mungkin invalid/terhapus oleh OS.
+            // Pairing baru akan membuat AES key baru melalui getOrCreateKey().
             clear(context)
+            deleteKey()
             null
         }
     }
@@ -51,8 +54,19 @@ object DeviceTokenStore {
     fun deviceId(context: Context): String? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .getString(DEVICE_ID, null)
 
+    @Synchronized
     fun clear(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
+    @Synchronized
+    private fun deleteKey() {
+        try {
+            val store = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (store.containsAlias(KEY_ALIAS)) store.deleteEntry(KEY_ALIAS)
+        } catch (_: Exception) {
+            // Tidak ada tindakan aman lain; pairing berikutnya akan melaporkan error jika Keystore tetap gagal.
+        }
     }
 
     private fun getOrCreateKey(): SecretKey {

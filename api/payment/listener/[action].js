@@ -85,7 +85,8 @@ async function orders(req, res, device) {
   const db = supabase();
   const { data, error } = await db.from('orders')
     .select('order_id,package_name,total_amount_idr,qr_expires_at,status,created_at')
-    .eq('status', 'PENDING').order('created_at', { ascending: false }).limit(50);
+    .eq('status', 'PENDING').eq('payment_method', 'GOPAY_QRIS')
+    .order('created_at', { ascending: false }).limit(50);
   if (error) return json(res, 500, { ok: false, error: 'orders_unavailable' });
   return json(res, 200, { ok: true, server_time: Date.now(), orders: data || [] });
 }

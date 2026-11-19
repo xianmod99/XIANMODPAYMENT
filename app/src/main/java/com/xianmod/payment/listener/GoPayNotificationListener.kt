@@ -9,8 +9,8 @@ import com.xianmod.payment.PaymentApi
 /**
  * XIANMOD notification listener.
  *
- * The official GoPay Merchant package is filtered. Payment parsing remains disabled
- * until the actual notification schema is verified from a real device.
+ * Only the verified GoPay Merchant static-QR payment notification format is parsed.
+ * Parsed notifications are untrusted candidates and never trigger automatic activation.
  */
 class GoPayNotificationListener : NotificationListenerService() {
 
@@ -88,9 +88,39 @@ data class ParsedPaymentCandidate(
 )
 
 object NotificationParser {
+    private const val VERIFIED_TITLE = "Pembayaran QRIS statis diterima"
+
+    // Verified on-device example: "Rp 1 di DIM QR."
+    // Dots are treated as Indonesian thousands separators; decimals are rejected.
+    private val amountLine = Regex(
+        pattern = "^\\s*Rp\\s*([0-9][0-9.]*)\\s+di\\s+(.+?)\\.?\\s*$",
+        option = RegexOption.IGNORE_CASE
+    )
+
     /**
-     * Deliberately disabled until sanitized real notification examples exist.
-     * A guessed parser could misread unrelated notifications as payments.
+     * Accept only the confirmed static-QR success title and a matching amount line.
+     * No transaction ID is present in the observed notification, so reference stays null.
      */
-    fun parse(title: String, text: String, bigText: String): ParsedPaymentCandidate? = null
+    fun parse(title: String, text: String, bigText: String): ParsedPaymentCandidate? {
+        if (title.trim().replace(Regex("\\s+"), " ") != VERIFIED_TITLE) return null
+
+        val parsedLines = listOf(text, bigText)
+            .filter { it.isNotBlank() }
+            .mapNotNull { line ->
+                val match = amountLine.matchEntire(line.trim()) ?: return@mapNotNull null
+                val digits = match.groupValues[1].replace(".", "")
+                val amount = digits.toLongOrNull() ?: return@mapNotNull null
+                val merchant = match.groupValues[2].trim().trimEnd('.')
+                if (amount <= 0L || merchant.isBlank()) null else amount
+            }
+
+        // Android may mirror the same content in text and bigText. Conflicting values
+        // are rejected rather than guessing which amount is authoritative.
+        val distinctAmounts = parsedLines.distinct()
+        if (distinctAmounts.size != 1) return null
+        return ParsedPaymentCandidate(
+            amount = distinctAmounts.single(),
+            transactionReference = null
+        )
+    }
 }
