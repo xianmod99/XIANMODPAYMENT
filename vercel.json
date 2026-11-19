@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "functions": {
+    "api/telegram.js": { "maxDuration": 60 },
+    "api/payment/casaku.js": { "maxDuration": 30 },
+    "api/payment/listener/[action].js": { "maxDuration": 30 },
+    "api/cron/backup.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/cron/backup", "schedule": "0 20 * * *" }
+  ]
+}
