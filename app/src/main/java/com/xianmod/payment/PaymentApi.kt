@@ -23,6 +23,21 @@ object PaymentApi {
     )
 
     data class PairResult(val deviceId: String, val token: String)
+    data class ApproveResult(val already: Boolean, val fulfillmentStatus: String?, val fulfillmentOk: Boolean, val fulfillmentError: String?)
+
+    /** Approve manual: server memeriksa ulang nominal, status PENDING, dan metode GoPay sebelum menandai PAID. */
+    fun approveOrder(context: Context, orderId: String, amount: Long): ApproveResult {
+        val token = DeviceTokenStore.token(context) ?: throw ApiException("device_not_paired")
+        val body = JSONObject().put("order_id", orderId).put("confirm_amount", amount)
+        val result = request("POST", "/api/payment/listener/approve-order", token, body)
+        if (!result.optBoolean("ok")) throw ApiException(result.optString("error", "approve_failed"))
+        return ApproveResult(
+            already = result.optBoolean("already"),
+            fulfillmentStatus = result.optString("fulfillment_status").ifBlank { null },
+            fulfillmentOk = result.optBoolean("fulfillment_ok"),
+            fulfillmentError = result.optString("fulfillment_error").ifBlank { null }
+        )
+    }
 
     fun pair(context: Context, code: String): PairResult {
         val body = JSONObject()

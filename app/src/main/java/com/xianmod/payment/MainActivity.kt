@@ -88,6 +88,9 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
     var lastError by remember { mutableStateOf("") }
     var pairCode by remember { mutableStateOf("") }
     var pairingBusy by remember { mutableStateOf(false) }
+    var approveTarget by remember { mutableStateOf<PaymentApi.PendingOrder?>(null) }
+    var approveBusy by remember { mutableStateOf(false) }
+    var approveMessage by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -127,6 +130,49 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
     val labels = listOf("Beranda", "Order", "Monitor", "Pengaturan")
     val icons = listOf(Icons.Default.Dashboard, Icons.Default.ReceiptLong, Icons.Default.Radar, Icons.Default.Settings)
 
+    approveTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!approveBusy) approveTarget = null },
+            title = { Text("Setujui pembayaran manual?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Order: ${target.orderId}")
+                    Text("Paket: ${target.packageName}")
+                    Text("Nominal: Rp ${NumberFormat.getIntegerInstance(Locale("id", "ID")).format(target.amount)}")
+                    Text("Pastikan uang dengan nominal PERSIS ini sudah masuk di GoPay Merchant. Setelah disetujui, order jadi PAID dan VIP dikirim ke pembeli.")
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !approveBusy,
+                    colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black),
+                    onClick = {
+                        approveBusy = true
+                        scope.launch {
+                            try {
+                                val r = withContext(Dispatchers.IO) { PaymentApi.approveOrder(context, target.orderId, target.amount) }
+                                approveMessage = when {
+                                    r.already -> "Order ${target.orderId} sudah PAID sebelumnya."
+                                    r.fulfillmentOk -> "Order ${target.orderId} disetujui dan VIP terkirim."
+                                    else -> "Order ${target.orderId} disetujui (PAID), tetapi pengiriman VIP perlu dicek Owner: ${r.fulfillmentStatus ?: "-"} ${r.fulfillmentError.orEmpty()}".trim()
+                                }
+                                pendingOrders = pendingOrders.filter { it.orderId != target.orderId }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                approveMessage = PaymentErrors.describe(e)
+                            } finally {
+                                approveBusy = false
+                                approveTarget = null
+                            }
+                        }
+                    }
+                ) { Text(if (approveBusy) "Memproses..." else "Ya, setujui") }
+            },
+            dismissButton = { TextButton(enabled = !approveBusy, onClick = { approveTarget = null }) { Text("Batal") } }
+        )
+    }
+
     Scaffold(
         containerColor = Bg,
         bottomBar = {
@@ -149,7 +195,7 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
     ) { padding ->
         when (selected) {
             0 -> DashboardScreen(Modifier.padding(padding), notificationAccessGranted, listenerConnected, paired, serverState, pendingOrders, lastError, onOpenNotificationSettings)
-            1 -> OrdersScreen(Modifier.padding(padding), pendingOrders, paired, serverState)
+            1 -> OrdersScreen(Modifier.padding(padding), pendingOrders, paired, serverState, approveMessage) { approveTarget = it }
             2 -> MonitorScreen(Modifier.padding(padding), notificationAccessGranted, listenerConnected, onOpenNotificationSettings)
             else -> SettingsScreen(
                 modifier = Modifier.padding(padding), onOpenSettings = onOpenNotificationSettings,
@@ -248,27 +294,29 @@ private fun DashboardScreen(
             Text("Kesehatan perangkat", color = Color.White, fontWeight = FontWeight.Bold)
             InfoRow("Model", android.os.Build.MODEL ?: "Android")
             InfoRow("Android", android.os.Build.VERSION.RELEASE ?: "Unknown")
-            InfoRow("Mode", "MANUAL OWNER REVIEW")
+            InfoRow("Mode", "APPROVE MANUAL OWNER")
         }
     }
 }
 
 @Composable
-private fun OrdersScreen(modifier: Modifier, orders: List<PaymentApi.PendingOrder>, paired: Boolean, serverState: String) {
+private fun OrdersScreen(modifier: Modifier, orders: List<PaymentApi.PendingOrder>, paired: Boolean, serverState: String, message: String, onApprove: (PaymentApi.PendingOrder) -> Unit) {
     Page(modifier) {
         GlassCard {
             Text("Order PENDING", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("Daftar disinkronkan setiap 5 detik melalui API perangkat yang terautentikasi (polling, bukan push realtime).", color = Muted, fontSize = 12.sp)
             StatusPill(if (paired) serverState else "PAIRING DIPERLUKAN", if (paired && serverState == "TERHUBUNG") Green else Muted)
+            Text("Notifikasi GoPay tidak masuk? Cek uang di GoPay Merchant, lalu setujui manual lewat tombol di bawah tiap order.", color = Muted, fontSize = 11.sp)
+            if (message.isNotBlank()) Text(message, color = Color(0xFFFFB74D), fontSize = 12.sp)
         }
         if (!paired) GlassCard { Text("Pasangkan perangkat di Pengaturan untuk melihat order.", color = Muted) }
         else if (orders.isEmpty()) GlassCard { Text("Belum ada order PENDING.", color = Muted) }
-        else orders.forEach { GlassCard { OrderRow(it) } }
+        else orders.forEach { order -> GlassCard { OrderRow(order, onApprove = { onApprove(order) }) } }
     }
 }
 
 @Composable
-private fun OrderRow(order: PaymentApi.PendingOrder) {
+private fun OrderRow(order: PaymentApi.PendingOrder, onApprove: (() -> Unit)? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(order.orderId, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -277,6 +325,11 @@ private fun OrderRow(order: PaymentApi.PendingOrder) {
         Text(order.packageName, color = Muted, fontSize = 12.sp)
         Text("Rp ${NumberFormat.getIntegerInstance(Locale("id", "ID")).format(order.amount)}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text("QR expires: ${order.expiresAt.ifBlank { "-" }}", color = Muted, fontSize = 10.sp)
+        if (onApprove != null) {
+            Button(onClick = onApprove, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black)) {
+                Text("Setujui manual (sudah terima uang)", fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

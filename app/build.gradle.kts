@@ -12,8 +12,13 @@ android {
         applicationId = "com.xianmod.payment"
         minSdk = 26
         targetSdk = 35
+<<<<<<< HEAD
         versionCode = 4
         versionName = "1.2.1"
+=======
+        versionCode = 5
+        versionName = "1.3.0"
+>>>>>>> 0245dc9 (Update XIANMOD payment integration)
         buildConfigField("String", "API_BASE_URL", "\"https://xianmodbot.vercel.app\"")
     }
 
