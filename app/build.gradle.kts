@@ -14,7 +14,7 @@ android {
         targetSdk = 35
         // versionCode naik otomatis di GitHub Actions supaya APK baru selalu diterima sebagai update.
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0) + 100
-        versionName = "1.5.0"
+        versionName = "1.5.1"
         buildConfigField("String", "API_BASE_URL", "\"https://xianmodbot.vercel.app\"")
     }
 

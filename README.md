@@ -70,3 +70,4 @@ Pada HyperOS, aktifkan Autostart dan setel Battery Saver ke No restrictions agar
 - APK ditandatangani dengan kunci tetap dari GitHub Secrets `XIANMOD_KEYSTORE_BASE64` dan `XIANMOD_KEYSTORE_PASSWORD` (tidak ada kunci di source code).
 - versionCode naik otomatis mengikuti nomor run GitHub Actions.
 - Sekali saja: uninstall APK lama (kunci berbeda), pasang build pertama yang bertanda tangan kunci tetap, pairing ulang. Setelah itu cukup install di atasnya.
+- Daftar order menampilkan masa berlaku QR dalam WIB dan penanda "QR kedaluwarsa" (oranye) bila sudah lewat.

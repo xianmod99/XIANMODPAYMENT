@@ -346,7 +346,8 @@ private fun OrderRow(order: PaymentApi.PendingOrder, onApprove: (() -> Unit)? = 
         }
         Text(order.packageName, color = Muted, fontSize = 12.sp)
         Text("Rp ${NumberFormat.getIntegerInstance(Locale("id", "ID")).format(order.amount)}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("QR expires: ${order.expiresAt.ifBlank { "-" }}", color = Muted, fontSize = 10.sp)
+        val expiry = OrderNotificationText.qrExpiry(order.expiresAt)
+        Text(expiry.label, color = if (expiry.expired) Color(0xFFFFB74D) else Muted, fontSize = 11.sp)
         if (onApprove != null) {
             Button(onClick = onApprove, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Color.Black)) {
                 Text("Setujui manual (sudah terima uang)", fontWeight = FontWeight.Bold)
