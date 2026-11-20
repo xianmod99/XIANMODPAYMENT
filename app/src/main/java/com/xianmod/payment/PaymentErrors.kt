@@ -27,8 +27,6 @@ object PaymentErrors {
                 "Server gagal memproses pairing. Kode kemungkinan belum terpakai; coba lagi. Jika berulang, Owner cek log Vercel."
             "body_invalid" -> "Server tidak bisa membaca permintaan (body_invalid). Perbarui aplikasi."
             "unauthorized" -> "Token perangkat ditolak server. Perangkat mungkin sudah dicabut; pasangkan ulang dengan kode baru."
-<<<<<<< HEAD
-=======
             "order_id_required", "confirm_amount_invalid" -> "Data order tidak valid. Muat ulang daftar order lalu coba lagi."
             "order_not_found" -> "Order tidak ditemukan di server."
             "order_not_gopay" -> "Order ini bukan order GoPay QRIS, jadi tidak bisa disetujui dari APK."
@@ -36,7 +34,6 @@ object PaymentErrors {
             "order_not_pending" -> "Order sudah tidak berstatus PENDING (sudah dibayar, kedaluwarsa, atau dibatalkan)."
             "apk_approve_disabled" -> "Approve dari APK dinonaktifkan di server (LISTENER_APK_APPROVE=false)."
             "approve_failed" -> "Server gagal memproses approve. Cek status order di bot sebelum mencoba lagi."
->>>>>>> 0245dc9 (Update XIANMOD payment integration)
             "device_not_paired" -> "Perangkat belum dipasangkan."
             "pair_response_incomplete" ->
                 "Server membalas sukses tetapi data perangkat tidak lengkap. Minta kode baru dan coba lagi."

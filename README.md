@@ -57,10 +57,7 @@ Pada HyperOS, aktifkan Autostart dan setel Battery Saver ke No restrictions agar
 - Token tidak lagi dihapus karena error sementara Keystore; hanya dihapus bila kunci/ciphertext memang rusak.
 - Polling order membedakan "TOKEN DITOLAK" (401) dari "OFFLINE".
 - Salinan lama backend (api/, lib/, test/, vercel.json) dihapus dari repo Android; backend hanya ada di proyek XIANMOD_VERCEL.
-<<<<<<< HEAD
-=======
 
 ## XIANMOD PAYMENT 1.3.0
 - Tab **Order**: tombol "Setujui manual" per order PENDING dengan dialog konfirmasi (order, paket, nominal). Server memeriksa ulang nominal dan status.
 - Logo/ikon dibuat ulang simetris dan masuk safe zone adaptive icon (tidak terpotong lagi).
->>>>>>> 0245dc9 (Update XIANMOD payment integration)

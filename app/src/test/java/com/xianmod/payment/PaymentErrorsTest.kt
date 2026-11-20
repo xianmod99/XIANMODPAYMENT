@@ -40,13 +40,10 @@ class PaymentErrorsTest {
     fun nonApiExceptionGivesGenericMessage() {
         assertTrue(PaymentErrors.describe(IllegalStateException("x")).contains("IllegalStateException"))
     }
-<<<<<<< HEAD
-=======
 
     @Test
     fun approveErrorsAreExplained() {
         assertTrue(PaymentErrors.describe(ApiException("amount_mismatch", 409)).contains("Nominal"))
         assertTrue(PaymentErrors.describe(ApiException("order_not_pending", 409)).contains("PENDING"))
     }
->>>>>>> 0245dc9 (Update XIANMOD payment integration)
 }
