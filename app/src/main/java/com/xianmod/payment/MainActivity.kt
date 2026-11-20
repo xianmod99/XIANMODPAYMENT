@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xianmod.payment.listener.GoPayNotificationListener
 import com.xianmod.payment.ui.theme.XianmodTheme
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -108,9 +109,12 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
                     pendingOrders = result
                     serverState = "TERHUBUNG"
                     lastError = ""
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    serverState = "OFFLINE / TOKEN INVALID"
-                    lastError = e.message ?: "Koneksi gagal"
+                    val rejected = e is ApiException && e.httpStatus == 401
+                    serverState = if (rejected) "TOKEN DITOLAK" else "OFFLINE"
+                    lastError = PaymentErrors.describe(e)
                 }
                 delay(5_000)
             }
@@ -162,8 +166,10 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
                                 paired = true
                                 pairCode = ""
                                 lastError = "Perangkat berhasil dipasangkan."
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
-                                lastError = e.message ?: "Pairing gagal"
+                                lastError = PaymentErrors.describe(e)
                             } finally { pairingBusy = false }
                         }
                     }

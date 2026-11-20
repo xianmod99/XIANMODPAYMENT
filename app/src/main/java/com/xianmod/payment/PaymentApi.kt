@@ -4,7 +4,12 @@ import android.content.Context
 import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 import java.net.URL
 import java.util.UUID
 
@@ -27,7 +32,10 @@ object PaymentApi {
             .put("app_version", BuildConfig.VERSION_NAME)
         val result = request("POST", "/api/payment/listener/pair", null, body)
         if (!result.optBoolean("ok")) throw ApiException(result.optString("error", "pair_failed"))
-        return PairResult(result.getString("device_id"), result.getString("token"))
+        val deviceId = result.optString("device_id")
+        val token = result.optString("token")
+        if (deviceId.isBlank() || token.isBlank()) throw ApiException("pair_response_incomplete")
+        return PairResult(deviceId, token)
     }
 
     fun fetchOrders(context: Context): List<PendingOrder> {
@@ -71,29 +79,47 @@ object PaymentApi {
     }
 
     private fun request(method: String, path: String, token: String?, body: JSONObject? = null): JSONObject {
-        val connection = (URL(BuildConfig.API_BASE_URL.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 12000
-            readTimeout = 15000
-            setRequestProperty("Accept", "application/json")
-            if (token != null) setRequestProperty("Authorization", "Bearer $token")
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            }
-        }
+        var status = 0
+        var connection: HttpURLConnection? = null
         try {
-            if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val conn = (URL(BuildConfig.API_BASE_URL.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 12000
+                readTimeout = 15000
+                useCaches = false
+                setRequestProperty("Accept", "application/json")
+                if (token != null) setRequestProperty("Authorization", "Bearer $token")
+                if (body != null) {
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                }
+            }
+            connection = conn
+            if (body != null) conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            status = conn.responseCode
+            val stream = if (status in 200..299) conn.inputStream else conn.errorStream
             val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject().put("error", "invalid_server_response") }
-            if (code !in 200..299) throw ApiException(json.optString("error", "http_$code"))
-            return json
+            val json = try { JSONObject(raw) } catch (_: Exception) { null }
+            if (status !in 200..299) {
+                // Kode error dari backend dipertahankan apa adanya; status HTTP asli selalu ikut.
+                val code = json?.optString("error").orEmpty().ifBlank { if (json == null) "invalid_server_response" else "http_$status" }
+                throw ApiException(code, status)
+            }
+            return json ?: throw ApiException("invalid_server_response", status)
+        } catch (e: ApiException) {
+            throw e
+        } catch (e: UnknownHostException) {
+            throw ApiException("network_dns", status, e)
+        } catch (e: SocketTimeoutException) {
+            throw ApiException("network_timeout", status, e)
+        } catch (e: ConnectException) {
+            throw ApiException("network_connect", status, e)
+        } catch (e: SSLException) {
+            throw ApiException("network_ssl", status, e)
+        } catch (e: IOException) {
+            throw ApiException("network_io", status, e)
         } finally {
-            connection.disconnect()
+            connection?.disconnect()
         }
     }
-
-    class ApiException(message: String) : Exception(message)
 }

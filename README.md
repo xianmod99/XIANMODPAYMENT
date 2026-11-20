@@ -43,9 +43,17 @@ Pada HyperOS, aktifkan Autostart dan setel Battery Saver ke No restrictions agar
 
 ## XIANMOD PAYMENT 1.1.0
 
-- APK memakai `https://xianmod.store` sebagai API production.
+- APK memakai `https://xianmodbot.vercel.app` sebagai API production.
 - Pairing device token menggunakan Android Keystore AES-GCM.
 - Daftar order PENDING dimuat dari API setiap 10 detik.
 - Aktivasi pembayaran selalu memerlukan persetujuan Owner; tidak ada auto-activation dari notifikasi.
 - Package GoPay Merchant: `com.gojek.gopaymerchant`; parser nominal masih dinonaktifkan sampai format notifikasi aktual diverifikasi.
 - Jalankan workflow GitHub Actions **XIANMOD PAYMENT - Debug APK** untuk APK uji yang dapat dipasang.
+
+## XIANMOD PAYMENT 1.2.1 — perbaikan pairing
+- Error HTTP asli (mis. 503, 429, 401) kini ditampilkan beserta kode dari server; tidak lagi disamarkan.
+- Kegagalan jaringan dibedakan: DNS, timeout, koneksi, SSL.
+- Penyimpanan token (Android Keystore) diverifikasi dengan baca-balik. Bila gagal, UI menjelaskan bahwa kode sudah terpakai dan perlu kode baru.
+- Token tidak lagi dihapus karena error sementara Keystore; hanya dihapus bila kunci/ciphertext memang rusak.
+- Polling order membedakan "TOKEN DITOLAK" (401) dari "OFFLINE".
+- Salinan lama backend (api/, lib/, test/, vercel.json) dihapus dari repo Android; backend hanya ada di proyek XIANMOD_VERCEL.
