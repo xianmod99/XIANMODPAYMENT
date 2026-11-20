@@ -1,6 +1,11 @@
 package com.xianmod.payment
 
+import android.Manifest
 import android.content.ComponentName
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -48,10 +53,17 @@ private val Green = Color(0xFF55D69E)
 
 class MainActivity : ComponentActivity() {
     private val notificationAccessGranted = mutableStateOf(false)
+    private val postNotificationsPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshNotificationAccess()
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            postNotificationsPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             XianmodTheme {
                 PaymentApp(
@@ -65,6 +77,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshNotificationAccess()
+        if (DeviceTokenStore.token(this) != null) OrderWatcherService.start(this)
     }
 
     private fun refreshNotificationAccess() {
@@ -90,6 +103,7 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
     var pairingBusy by remember { mutableStateOf(false) }
     var approveTarget by remember { mutableStateOf<PaymentApi.PendingOrder?>(null) }
     var approveBusy by remember { mutableStateOf(false) }
+    var watchEnabled by remember { mutableStateOf(OrderWatcherService.isEnabled(context)) }
     var approveMessage by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -200,6 +214,12 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
             else -> SettingsScreen(
                 modifier = Modifier.padding(padding), onOpenSettings = onOpenNotificationSettings,
                 paired = paired, deviceId = deviceId, serverState = serverState,
+                watchEnabled = watchEnabled,
+                onWatchChange = { on ->
+                    OrderWatcherService.setEnabled(context, on)
+                    watchEnabled = on
+                    if (on && paired) OrderWatcherService.start(context) else OrderWatcherService.stop(context)
+                },
                 pairCode = pairCode, onPairCodeChange = { pairCode = it }, pairingBusy = pairingBusy,
                 message = lastError, onPair = {
                     if (!pairingBusy && pairCode.isNotBlank()) {
@@ -210,6 +230,7 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
                                 DeviceTokenStore.save(context, result.token, result.deviceId)
                                 deviceId = result.deviceId
                                 paired = true
+                                OrderWatcherService.start(context)
                                 pairCode = ""
                                 lastError = "Perangkat berhasil dipasangkan."
                             } catch (e: CancellationException) {
@@ -220,6 +241,7 @@ private fun PaymentApp(notificationAccessGranted: Boolean, onOpenNotificationSet
                         }
                     }
                 }, onUnpair = {
+                    OrderWatcherService.stop(context)
                     DeviceTokenStore.clear(context)
                     paired = false
                     deviceId = ""
@@ -354,7 +376,8 @@ private fun MonitorScreen(modifier: Modifier, access: Boolean, connected: Boolea
 private fun SettingsScreen(
     modifier: Modifier, onOpenSettings: () -> Unit, paired: Boolean, deviceId: String,
     serverState: String, pairCode: String, onPairCodeChange: (String) -> Unit,
-    pairingBusy: Boolean, message: String, onPair: () -> Unit, onUnpair: () -> Unit
+    pairingBusy: Boolean, message: String, onPair: () -> Unit, onUnpair: () -> Unit,
+    watchEnabled: Boolean, onWatchChange: (Boolean) -> Unit
 ) {
     Page(modifier) {
         GlassCard {
@@ -372,6 +395,14 @@ private fun SettingsScreen(
                 }
             }
             if (message.isNotBlank()) Text(message, color = Color(0xFFFFB74D), fontSize = 11.sp)
+            Divider(color = Color.White.copy(alpha = .08f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Notifikasi order baru", color = Color.White, fontWeight = FontWeight.Medium)
+                    Text("Muncul di HP saat ada order PENDING masuk, walau aplikasi ditutup.", color = Muted, fontSize = 11.sp)
+                }
+                Switch(checked = watchEnabled, onCheckedChange = onWatchChange)
+            }
             Divider(color = Color.White.copy(alpha = .08f))
             Text("Notification Access", color = Color.White, fontWeight = FontWeight.Medium)
             Text("Buka pengaturan Android untuk mengaktifkan layanan pembaca notifikasi.", color = Muted, fontSize = 11.sp)

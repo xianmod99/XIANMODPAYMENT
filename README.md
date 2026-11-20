@@ -61,3 +61,12 @@ Pada HyperOS, aktifkan Autostart dan setel Battery Saver ke No restrictions agar
 ## XIANMOD PAYMENT 1.3.0
 - Tab **Order**: tombol "Setujui manual" per order PENDING dengan dialog konfirmasi (order, paket, nominal). Server memeriksa ulang nominal dan status.
 - Logo/ikon dibuat ulang simetris dan masuk safe zone adaptive icon (tidak terpotong lagi).
+
+## XIANMOD PAYMENT 1.4.0
+- Notifikasi HP saat ada order PENDING baru (layanan pemantau, polling 8 detik, tetap jalan walau aplikasi ditutup). Bisa dimatikan di Pengaturan.
+- Izin notifikasi diminta saat aplikasi dibuka; pemantau dijalankan ulang otomatis setelah HP restart.
+
+## XIANMOD PAYMENT 1.5.0 — update tanpa uninstall
+- APK ditandatangani dengan kunci tetap dari GitHub Secrets `XIANMOD_KEYSTORE_BASE64` dan `XIANMOD_KEYSTORE_PASSWORD` (tidak ada kunci di source code).
+- versionCode naik otomatis mengikuti nomor run GitHub Actions.
+- Sekali saja: uninstall APK lama (kunci berbeda), pasang build pertama yang bertanda tangan kunci tetap, pairing ulang. Setelah itu cukup install di atasnya.
